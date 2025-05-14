@@ -217,7 +217,7 @@
 use proc_macro::TokenStream as TokenStream1;
 use proc_macro2::{Group, TokenStream};
 
-use proc_macro_error::{abort, proc_macro_error};
+use proc_macro_error2::{abort, proc_macro_error};
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
@@ -428,7 +428,7 @@ pub fn inline_derive(item: TokenStream1) -> TokenStream1 {
 
     let attr = match attrs
         .iter()
-        .position(|attr| attr.path.is_ident("inline_derive"))
+        .position(|attr| attr.path().is_ident("inline_derive"))
     {
         Some(i) => attrs.remove(i),
         None => abort!(item, "`inline_derive` attribute not present"),

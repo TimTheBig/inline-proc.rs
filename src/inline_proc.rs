@@ -2,6 +2,7 @@
 
 use proc_macro::TokenStream as TokenStream1;
 use proc_macro2::{Delimiter, Group, Spacing, Span, TokenStream, TokenTree};
+use syn::spanned::Spanned;
 use std::collections::HashMap;
 use std::fmt::{self, Display, Formatter, Write};
 use std::io::BufReader;
@@ -14,7 +15,7 @@ use cargo_metadata::diagnostic::{
 };
 use cargo_metadata::Message as CargoMessage;
 use once_cell::sync::Lazy;
-use proc_macro_error::{abort, abort_call_site, Diagnostic, Level};
+use proc_macro_error2::{abort, abort_call_site, Diagnostic, Level};
 use quote::{format_ident, quote, ToTokens};
 use serde::de::{self, Deserializer, Unexpected, Visitor};
 use serde::Deserialize;
@@ -78,7 +79,7 @@ pub(super) fn inline_proc(input: TokenStream1) -> TokenStream1 {
         .wait()
         .unwrap_or_else(|e| abort_call_site!("Failed to wait on Cargo check: {}", e));
 
-    proc_macro_error::abort_if_dirty();
+    proc_macro_error2::abort_if_dirty();
     if !cargo_exit_code.success() {
         // An error with Cargo, not rustc
         abort_call_site!("Cargo build failed.");
@@ -156,7 +157,7 @@ fn parse_mod(module: ItemMod) -> (String, Metadata, TokenStream) {
     };
 
     if module_content.is_empty() {
-        abort!(braces.span, "Missing metadata information");
+        abort!(braces.span.span(), "Missing metadata information");
     }
 
     let (metadata_format, metadata_source) = match module_content.remove(0) {
@@ -183,7 +184,7 @@ fn parse_mod(module: ItemMod) -> (String, Metadata, TokenStream) {
                 MacroDelimiter::Bracket(bracket) => (bracket.span, Delimiter::Bracket),
             };
             let mut group = Group::new(delimiter, mac.tokens);
-            group.set_span(group_span);
+            group.set_span(group_span.span());
 
             (format, TokenString::from_token(group))
         }
@@ -463,7 +464,7 @@ fn generate_lib_rs(metadata: &Metadata, mut code: TokenStream) -> TokenStream {
         let function = &mac.function.0;
         let name = format_ident!("__exported_macro_bang_{}", name.0);
         code.extend(quote! {
-            #[no_mangle]
+            #[unsafe(no_mangle)]
             pub fn #name(input: ::proc_macro::TokenStream) -> ::proc_macro::TokenStream {
                 #function(input)
             }
@@ -474,7 +475,7 @@ fn generate_lib_rs(metadata: &Metadata, mut code: TokenStream) -> TokenStream {
         let function = &mac.function.0;
         let name = format_ident!("__exported_macro_derive_{}", name.0);
         code.extend(quote! {
-            #[no_mangle]
+            #[unsafe(no_mangle)]
             pub fn #name(item: ::proc_macro::TokenStream) -> ::proc_macro::TokenStream {
                 #function(item)
             }
@@ -485,7 +486,7 @@ fn generate_lib_rs(metadata: &Metadata, mut code: TokenStream) -> TokenStream {
         let function = &mac.function.0;
         let name = format_ident!("__exported_macro_attribute_{}", name.0);
         code.extend(quote! {
-            #[no_mangle]
+            #[unsafe(no_mangle)]
             pub fn #name(attr: ::proc_macro::TokenStream, item: ::proc_macro::TokenStream) -> ::proc_macro::TokenStream {
                 #function(attr, item)
             }

@@ -4,14 +4,14 @@ use proc_macro::TokenStream as TokenStream1;
 use proc_macro2::TokenStream;
 
 use libloading::{Library, Symbol};
-use proc_macro_error::abort;
+use proc_macro_error2::abort;
 use syn::parse::{Parse, ParseStream};
 use syn::{Ident, LitStr};
 
 pub(super) fn invoke_inline_macro(input: TokenStream1) -> TokenStream1 {
     let input: InvokerInput = syn::parse_macro_input!(input);
 
-    let library = Library::new(input.dylib_path.value())
+    let library = unsafe { Library::new(input.dylib_path.value()) }
         .unwrap_or_else(|e| abort!(input.dylib_path, "Failed to open library: {}", e));
 
     match input.macro_type {
@@ -84,7 +84,6 @@ unsafe fn library_macro<'lib, T>(
 ) -> Symbol<'lib, T> {
     let symbol_name = format!("__exported_macro_{}_{}\0", macro_type, macro_name);
 
-    #[allow(unused_unsafe)]
     let symbol = unsafe { library.get::<T>(symbol_name.as_bytes()) };
     symbol.unwrap_or_else(|e| {
         abort!(
