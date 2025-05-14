@@ -258,7 +258,7 @@ fn default_cargo() -> PathBuf {
 fn default_edition() -> String {
     "2015".to_owned()
 }
-fn return_true() -> bool {
+const fn return_true() -> bool {
     true
 }
 fn default_inline_proc_path() -> DeserializePath {

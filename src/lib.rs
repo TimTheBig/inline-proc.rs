@@ -261,7 +261,7 @@ mod invoke;
 ///         clippy: true,
 ///
 ///         // The edition to use. Default is 2015 edition.
-///         edition: "2021",
+///         edition: "2024",
 ///
 ///         // The dependencies of the proc macro. This is in the same format as Cargo.toml's
 ///         // `[dependencies]` section.
