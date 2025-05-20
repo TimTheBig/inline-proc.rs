@@ -152,8 +152,6 @@ use inline_proc::inline_proc;
 
 #[inline_proc]
 mod crate_attributes {
-   #![feature(box_syntax)]
-
     metadata::ron!(
         edition: "2021",
         dependencies: {},
@@ -163,7 +161,7 @@ mod crate_attributes {
     use proc_macro::TokenStream;
 
     pub fn my_bang_macro(_input: TokenStream) -> TokenStream {
-       *box TokenStream::new()
+       *Box::new(TokenStream::new())
     }
 }
 my_bang_macro!(input tokens);

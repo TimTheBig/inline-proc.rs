@@ -30,7 +30,8 @@ static CRATES_DIR: Lazy<PathBuf> = Lazy::new(|| TEMP_DIR.join("inline-proc-crate
 pub(super) fn inline_proc(input: TokenStream1) -> TokenStream1 {
     let (mod_name, metadata, content) = parse_mod(parse_macro_input!(input));
 
-    let lib_rs = TokenString::from_tokens(generate_lib_rs(&metadata, content));
+    // assert_eq!(format!("{:?}", TokenString::from_tokens(generate_lib_rs(&metadata, content.clone())).tokens), format!("{:?}", generate_lib_rs(&metadata, content.clone()).to_string().replace("\\n", "\n")));
+    let lib_rs = generate_lib_rs(&metadata, content);
     let cargo_toml = generate_cargo_toml(&metadata);
 
     let crate_root = CRATES_DIR.join(format!("{}-{}", CrateIdentifier, mod_name));
@@ -42,7 +43,7 @@ pub(super) fn inline_proc(input: TokenStream1) -> TokenStream1 {
 
     fs::write(&cargo_toml_path, &cargo_toml)
         .unwrap_or_else(|e| abort_call_site!("Failed to write Cargo.toml: {}", e));
-    fs::write(&lib_rs_path, &lib_rs.tokens)
+    fs::write(&lib_rs_path, &lib_rs.to_string())
         .unwrap_or_else(|e| abort_call_site!("Failed to write lib.rs: {}", e));
 
     let mut cargo = Command::new(&metadata.cargo)
@@ -96,8 +97,8 @@ pub(super) fn inline_proc(input: TokenStream1) -> TokenStream1 {
         .status()
         .unwrap_or_else(|e| abort_call_site!("Failed to wait on Cargo build: {}", e));
 
-    let mut dylib_path = crate_root.join("target");
-    dylib_path.push("debug");
+    let mut dylib_path = crate_root.join("target/debug");
+    // dylib_path.push("debug");
     dylib_path.push(libloading::library_filename("inline_proc_macro"));
 
     let dylib_path = dylib_path
@@ -186,18 +187,19 @@ fn parse_mod(module: ItemMod) -> (String, Metadata, TokenStream) {
             let mut group = Group::new(delimiter, mac.tokens);
             group.set_span(group_span.span());
 
-            (format, TokenString::from_token(group))
+            // (format, TokenString::from_token(group))
+            (format, group.to_string())
         }
         _ => abort!(module.mod_token, "Missing metadata information"),
     };
 
     let metadata: Metadata = match metadata_format {
         #[cfg(feature = "json")]
-        format if format == "json" => serde_json::from_str(&metadata_source.tokens)
-            .unwrap_or_else(|e| abort!(metadata_source.char_spans[e.column() - 1], e)),
+        format if format == "json" => serde_json::from_str(&metadata_source)
+            .unwrap_or_else(|e| abort!(TokenString::from_tokens(metadata_source).char_spans[e.column() - 1], e)),
         #[cfg(feature = "ron")]
-        format if format == "ron" => ron::from_str(&metadata_source.tokens)
-            .unwrap_or_else(|e| abort!(metadata_source.byte_spans[e.position.col], e)),
+        format if format == "ron" => ron::from_str(&metadata_source)
+            .unwrap_or_else(|e| abort!(TokenString::from_tokens(metadata_source).byte_spans[e.position.col], e)),
         format => Diagnostic::spanned(
             format.span(),
             Level::Error,
@@ -366,7 +368,7 @@ struct TokenString {
 }
 
 impl TokenString {
-    fn from_tokens(tokens: impl ToTokens) -> Self {
+    fn from_tokens(tokens: impl ToTokens + std::fmt::Debug) -> Self {
         let mut this = Self::default();
         this.push_tokens(tokens);
         this
@@ -377,17 +379,25 @@ impl TokenString {
         this
     }
     fn push(&mut self, item: impl Display, span: Span) {
+        // eprintln!("tokens: {}", self.tokens);
         let old_len = self.tokens.len();
         write!(self.tokens, "{}", item).unwrap();
-        let written = &self.tokens[old_len..];
-        self.byte_spans.extend(written.bytes().map(|_| span));
-        self.char_spans.extend(written.chars().map(|_| span));
+        eprintln!("old_len: {old_len}");
+        // let written = &self.tokens[old_len..];
+        let written = self.tokens.as_bytes()
+            .get(old_len..)
+            .expect(&format!("failed to get token after {}", self.tokens.as_bytes()[old_len]));
+        // self.byte_spans.extend(written.bytes().map(|_| span));
+        // self.char_spans.extend(written.chars().map(|_| span));
+        self.byte_spans.extend(written.iter().map(|_| span));
+        self.char_spans.extend(String::from_utf8_lossy(written).chars().map(|_| span));
     }
     fn extend_prev(&mut self, item: impl Display) {
         self.push(item, *self.byte_spans.last().unwrap());
     }
 
-    fn push_tokens(&mut self, tokens: impl ToTokens) {
+    fn push_tokens(&mut self, tokens: impl ToTokens + std::fmt::Debug) {
+        eprintln!("tokens: {:?}", tokens);
         for token in tokens.into_token_stream() {
             self.push_token(token);
         }
@@ -496,7 +506,7 @@ fn generate_lib_rs(metadata: &Metadata, mut code: TokenStream) -> TokenStream {
     code
 }
 
-fn cargo_diagnostic_to_diagnostic(cargo: CargoDiagnostic, source: &TokenString) -> Diagnostic {
+fn cargo_diagnostic_to_diagnostic(cargo: CargoDiagnostic, source: &TokenStream) -> Diagnostic {
     let mut diagnostic = Diagnostic::spanned(
         cargo_spans_to_span(&cargo.spans, source),
         match cargo.level {
@@ -521,15 +531,16 @@ fn cargo_diagnostic_to_diagnostic(cargo: CargoDiagnostic, source: &TokenString) 
     diagnostic
 }
 
-fn cargo_spans_to_span(spans: &[CargoSpan], source: &TokenString) -> Span {
+fn cargo_spans_to_span(spans: &[CargoSpan], source: &TokenStream) -> Span {
+    let source = source.to_string().as_bytes().iter().map(||);
     spans
         .iter()
         .find(|span| span.is_primary)
         .or_else(|| spans.first())
         .map(|span| {
-            let start = source.byte_spans[span.byte_start as usize];
+            let start = source[span.byte_start as usize];
             start
-                .join(source.byte_spans[span.byte_end as usize])
+                .join(source[span.byte_end as usize])
                 .unwrap_or(start)
         })
         .unwrap_or_else(Span::call_site)
